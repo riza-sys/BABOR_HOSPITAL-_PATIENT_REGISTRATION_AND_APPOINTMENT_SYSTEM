@@ -1,3 +1,4 @@
+
 package com.school.dao;
 
 import com.school.model.Role;
@@ -14,121 +15,144 @@ import java.util.Optional;
 
 public class UserDao {
 
-    /**
-     * Inserts a new account with PENDING status.
-     *
-     * @return true if the account was created, false if the username is already taken
-     */
-    public boolean register(String username, String password, String fullName, Role role)
+    // REGISTER USER
+    public boolean register(String username, String password,
+                            String fullName, Role role)
             throws SQLException, GeneralSecurityException {
-        String sql = "INSERT INTO users (username, password, role, full_name, status) "
-                + "VALUES (?, ?, ?, ?, 'PENDING')";
-        String passwordHash = PasswordUtil.hash(password);
+
+        String sql = "INSERT INTO users " +
+                "(username, password, full_name, role, status) " +
+                "VALUES (?, ?, ?, ?, ?)";
 
         try (Connection connection = DatabaseConnection.getConnection();
              PreparedStatement statement = connection.prepareStatement(sql)) {
+
             statement.setString(1, username);
-            statement.setString(2, passwordHash);
-            statement.setString(3, role.name());
-            statement.setString(4, fullName);
-            statement.executeUpdate();
-            return true;
-        } catch (SQLException e) {
-            if (e.getMessage() != null && e.getMessage().contains("UNIQUE constraint failed")) {
-                return false;
-            }
-            throw e;
-        }
-    }
+            statement.setString(2, PasswordUtil.hash(password));
+            statement.setString(3, fullName);
+            statement.setString(4, role.name());
+            statement.setString(5, "PENDING");
 
-    public Optional<User> login(String username, String password)
-            throws SQLException, GeneralSecurityException {
-        String sql = "SELECT user_id, username, password, full_name, role, status FROM users WHERE username = ?";
-
-        try (Connection connection = DatabaseConnection.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql)) {
-            statement.setString(1, username);
-
-            try (ResultSet resultSet = statement.executeQuery()) {
-                if (!resultSet.next()) {
-                    return Optional.empty();
-                }
-
-                String storedHash = resultSet.getString("password");
-                if (!PasswordUtil.verify(password, storedHash)) {
-                    return Optional.empty();
-                }
-
-                return Optional.of(new User(
-                        resultSet.getInt("user_id"),
-                        resultSet.getString("username"),
-                        storedHash,
-                        resultSet.getString("full_name"),
-                        Role.valueOf(resultSet.getString("role")),
-                        resultSet.getString("status")
-                ));
-            }
-        }
-    }
-
-    /**
-     * @return every registered account, regardless of role or status
-     */
-    public List<User> getAllUsers() throws SQLException {
-        String sql = "SELECT user_id, username, password, full_name, role, status "
-                + "FROM users ORDER BY user_id";
-
-        try (Connection connection = DatabaseConnection.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql);
-             ResultSet resultSet = statement.executeQuery()) {
-            return mapUsers(resultSet);
-        }
-    }
-
-    /**
-     * @return every account (all roles) whose status is still PENDING
-     */
-    public List<User> getPendingUsers() throws SQLException {
-        String sql = "SELECT user_id, username, password, full_name, role, status "
-                + "FROM users WHERE status = ? ORDER BY user_id";
-
-        try (Connection connection = DatabaseConnection.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql)) {
-            statement.setString(1, "PENDING");
-
-            try (ResultSet resultSet = statement.executeQuery()) {
-                return mapUsers(resultSet);
-            }
-        }
-    }
-
-    /**
-     * Changes the target account's status to APPROVED.
-     *
-     * @return true if a row was updated, false if no user has that ID
-     */
-    public boolean approveUser(int userId) throws SQLException {
-        String sql = "UPDATE users SET status = 'APPROVED' WHERE user_id = ?";
-
-        try (Connection connection = DatabaseConnection.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql)) {
-            statement.setInt(1, userId);
             return statement.executeUpdate() > 0;
         }
     }
 
-    private List<User> mapUsers(ResultSet resultSet) throws SQLException {
+    // LOGIN USER
+    public Optional<User> login(String username, String password)
+            throws SQLException, GeneralSecurityException {
+
+        String sql = "SELECT * FROM users WHERE username = ?";
+
+        try (Connection connection = DatabaseConnection.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+
+            statement.setString(1, username);
+
+            try (ResultSet rs = statement.executeQuery()) {
+
+                if (rs.next()) {
+
+                    String hashedPassword = rs.getString("password");
+
+                    if (PasswordUtil.verify(password, hashedPassword)) {
+
+                        User user = new User(
+                                rs.getInt("user_id"),
+                                rs.getString("username"),
+                                rs.getString("full_name"),
+                                Role.valueOf(rs.getString("role")),
+                                rs.getString("status")
+                        );
+
+                        return Optional.of(user);
+                    }
+                }
+            }
+        }
+
+        return Optional.empty();
+    }
+
+    // GET ALL USERS
+    public List<User> getAllUsers() throws SQLException {
+
+        String sql = "SELECT * FROM users ORDER BY user_id";
+
+        try (Connection connection = DatabaseConnection.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql);
+             ResultSet rs = statement.executeQuery()) {
+
+            return mapUsers(rs);
+        }
+    }
+
+    // GET PENDING USERS
+    public List<User> getPendingUsers() throws SQLException {
+
+        String sql = "SELECT * FROM users " +
+                "WHERE status = ? ORDER BY user_id";
+
+        try (Connection connection = DatabaseConnection.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+
+            statement.setString(1, "PENDING");
+
+            try (ResultSet rs = statement.executeQuery()) {
+                return mapUsers(rs);
+            }
+        }
+    }
+
+    // APPROVE USER
+    public boolean approveUser(int userId) throws SQLException {
+
+        String sql = "UPDATE users SET status = ? WHERE user_id = ?";
+
+        try (Connection connection = DatabaseConnection.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+
+            statement.setString(1, "APPROVED");
+            statement.setInt(2, userId);
+
+            return statement.executeUpdate() > 0;
+        }
+    }
+
+    // UPDATE USER ROLE AND STATUS
+    public boolean updateUserRoleAndStatus(
+            int userId, String newRole, String newStatus)
+            throws SQLException {
+
+        String sql = "UPDATE users SET role = ?, status = ? " +
+                "WHERE user_id = ?";
+
+        try (Connection connection = DatabaseConnection.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+
+            statement.setString(1, newRole.toUpperCase());
+            statement.setString(2, newStatus.toUpperCase());
+            statement.setInt(3, userId);
+
+            return statement.executeUpdate() > 0;
+        }
+    }
+
+    // MAP DATABASE USERS
+    private List<User> mapUsers(ResultSet rs) throws SQLException {
+
         List<User> users = new ArrayList<>();
-        while (resultSet.next()) {
+
+        while (rs.next()) {
+
             users.add(new User(
-                    resultSet.getInt("user_id"),
-                    resultSet.getString("username"),
-                    resultSet.getString("password"),
-                    resultSet.getString("full_name"),
-                    Role.valueOf(resultSet.getString("role")),
-                    resultSet.getString("status")
+                    rs.getInt("user_id"),
+                    rs.getString("username"),
+                    rs.getString("full_name"),
+                    Role.valueOf(rs.getString("role")),
+                    rs.getString("status")
             ));
         }
+
         return users;
     }
 }

@@ -29,6 +29,7 @@ public final class DatabaseInitializer {
             statement.execute(appointmentsTable());
             statement.execute(medicalInvoicesTable());
             statement.execute(systemLogsTable());
+            statement.execute(activityLogsTable());
         }
     }
 
@@ -100,6 +101,19 @@ public final class DatabaseInitializer {
                     user_id      INTEGER NOT NULL,
                     action_taken TEXT NOT NULL,
                     timestamp    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users (user_id)
+                )
+                """;
+    }
+
+    private static String activityLogsTable() {
+        return """
+                CREATE TABLE IF NOT EXISTS activity_logs (
+                    log_id      INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id     INTEGER NOT NULL,
+                    action_type TEXT NOT NULL,
+                    description TEXT NOT NULL,
+                    timestamp   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (user_id) REFERENCES users (user_id)
                 )
                 """;

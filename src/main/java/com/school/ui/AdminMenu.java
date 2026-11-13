@@ -1,9 +1,10 @@
-
 package com.school.ui;
 
+import com.school.dao.ActivityLogDao;
 import com.school.dao.UserDao;
-import com.school.model.User;
+import com.school.model.ActivityLog;
 import com.school.model.Role;
+import com.school.model.User;
 
 import java.sql.SQLException;
 import java.util.List;
@@ -11,7 +12,7 @@ import java.util.Scanner;
 
 /**
  * Menu for the Hospital Administrator.
- * Allows viewing, approving, and updating user accounts.
+ * Allows viewing, approving, and updating user accounts, and viewing audit logs.
  */
 public class AdminMenu extends RoleMenu {
 
@@ -21,6 +22,7 @@ public class AdminMenu extends RoleMenu {
     private static final int STATUS_WIDTH = 10;
 
     private final UserDao userDao;
+    private final ActivityLogDao logDao = new ActivityLogDao();
 
     public AdminMenu(Scanner scanner, UserDao userDao) {
         super(scanner);
@@ -47,6 +49,7 @@ public class AdminMenu extends RoleMenu {
             System.out.println("4. Logout");
             System.out.println("5. Exit application");
             System.out.println("6. Update User Role and Status");
+            System.out.println("7. View System Audit Logs");
 
             int choice = readIntInput("Choose an option: ");
 
@@ -58,7 +61,7 @@ public class AdminMenu extends RoleMenu {
 
                     case 2 -> viewPendingUsers();
 
-                    case 3 -> approveUserAccount();
+                    case 3 -> approveUserAccount(admin);
 
                     case 4 -> {
                         System.out.println(
@@ -72,8 +75,10 @@ public class AdminMenu extends RoleMenu {
 
                     case 6 -> updateUser(admin);
 
+                    case 7 -> auditLogMenu(admin);
+
                     default -> System.out.println(
-                            "Invalid choice. Please enter a number from 1 to 6.");
+                            "Invalid choice. Please enter a number from 1 to 7.");
                 }
 
             } catch (SQLException e) {
@@ -114,7 +119,7 @@ public class AdminMenu extends RoleMenu {
     }
 
     // Approve pending user accounts
-    private void approveUserAccount() throws SQLException {
+    private void approveUserAccount(User admin) throws SQLException {
 
         System.out.println("\n---- APPROVE USER ACCOUNT ----");
 
@@ -148,6 +153,10 @@ public class AdminMenu extends RoleMenu {
             }
 
             if (userDao.approveUser(targetId)) {
+
+                logDao.logAction(admin.userId(), "USER_APPROVED",
+                        "Admin [" + admin.userId()
+                                + "] approved account for User ID " + targetId);
 
                 System.out.println("Success! Account '"
                         + target.username()
@@ -234,6 +243,11 @@ public class AdminMenu extends RoleMenu {
 
         if (updated) {
 
+            logDao.logAction(admin.userId(), "USER_UPDATED",
+                    "Admin [" + admin.userId() + "] changed User "
+                            + targetUserId + " to role " + newRole
+                            + ", status " + newStatus);
+
             System.out.println("\n==================================");
             System.out.println("USER UPDATED SUCCESSFULLY!");
             System.out.println("Username: " + target.username());
@@ -244,6 +258,110 @@ public class AdminMenu extends RoleMenu {
         } else {
             System.out.println(
                     "Update failed. User ID not found.");
+        }
+    }
+
+    // Audit log submenu
+    private void auditLogMenu(User admin) {
+
+        while (true) {
+
+            System.out.println("\n---- SYSTEM AUDIT LOGS ----");
+            System.out.println("1. View All System Logs");
+            System.out.println("2. Filter Logs by User ID");
+            System.out.println("3. Clear All Logs");
+            System.out.println("0. Back");
+
+            int choice = readIntInput("Choose an option: ");
+
+            switch (choice) {
+
+                case 1 -> printLogs(logDao.getAllLogs());
+
+                case 2 -> {
+                    int userId = readIntInput(
+                            "Enter User ID to filter (0 to cancel): ");
+                    if (userId == 0) {
+                        System.out.println("Filter cancelled.");
+                    } else {
+                        printLogs(logDao.getLogsByUserId(userId));
+                    }
+                }
+
+                case 3 -> clearLogs(admin);
+
+                case 0 -> {
+                    return;
+                }
+
+                default -> System.out.println(
+                        "Invalid choice. Please enter a number from 0 to 3.");
+            }
+        }
+    }
+
+    // Print logs in the required aligned table
+    private void printLogs(List<ActivityLog> logs) {
+
+        String rowFormat = "%-5s | %-8s | %-18s | %-35s | %-20s%n";
+        String border = "-".repeat(5 + 8 + 18 + 35 + 20 + 12);
+
+        System.out.println(border);
+        System.out.printf(rowFormat,
+                "ID", "User ID", "Action Type", "Description", "Timestamp");
+        System.out.println(border);
+
+        if (logs.isEmpty()) {
+            System.out.println("No log entries found.");
+            System.out.println(border);
+            return;
+        }
+
+        for (ActivityLog log : logs) {
+
+            String description = log.description();
+
+            // First line carries the ID, user, action and timestamp
+            String firstLine = description.length() > 35
+                    ? description.substring(0, 35) : description;
+
+            System.out.printf(rowFormat,
+                    log.logId(), log.userId(), log.actionType(),
+                    firstLine, log.timestamp());
+
+            // Long descriptions continue on extra lines so nothing is cut off
+            for (int i = 35; i < description.length(); i += 35) {
+                System.out.printf(rowFormat, "", "", "",
+                        description.substring(i,
+                                Math.min(i + 35, description.length())),
+                        "");
+            }
+        }
+
+        System.out.println(border);
+        System.out.println(logs.size() + " log(s) listed.");
+    }
+
+    // Clear logs only after a typed confirmation
+    private void clearLogs(User admin) {
+
+        System.out.print(
+                "This permanently deletes ALL logs. Type CONFIRM to proceed: ");
+
+        String input = scanner.nextLine().trim();
+
+        if (!input.equals("CONFIRM")) {
+            System.out.println("Clear cancelled.");
+            return;
+        }
+
+        if (logDao.clearAllLogs()) {
+            System.out.println("All logs have been cleared.");
+            logDao.logAction(admin.userId(), "LOGS_CLEARED",
+                    "Admin [" + admin.userId()
+                            + "] cleared all activity logs");
+        } else {
+            System.out.println("Failed to clear logs.");
         }
     }
 
